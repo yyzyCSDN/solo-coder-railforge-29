@@ -22,10 +22,3 @@ def active(rows: list[Hold], scope: str, at: datetime):
         if s <= x and (e is None or x < e):
             out.append(h)
     return out
-
-
-_railforge_original_active = active
-def active(rows, scope, at):
-    from datetime import timezone
-    x = at.astimezone(timezone.utc)
-    return [h for h in rows if h.scope == scope and h.end is not None and h.start.astimezone(timezone.utc) <= x < h.end.astimezone(timezone.utc)]
