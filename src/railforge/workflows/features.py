@@ -4,6 +4,7 @@ from railforge.cargo.segregation import violations
 from railforge.commercial.contract_capacity import allocate as allocate_capacity
 from railforge.control.recovery import choose as choose_recovery
 from railforge.customs.holds import active
+from railforge.customs.releases import released
 from railforge.crew.duty import legal as duty_legal
 from railforge.crew.relief_points import choose as choose_relief
 from railforge.eta.event_fusion import fused_delay
@@ -94,15 +95,30 @@ class RailForgeFeatureService:
         return self.control.run(operation_id, "feature.capacity.reserved", operation_id, at,
                                 lambda: allocate_capacity(requests, resources))
 
-    def preclear_customs(self, operation_id, holds, scope, check_at, loads, rules, at):
+    def preclear_customs(self, operation_id, subject, holds, scope, check_at, loads, rules,
+                         release_events, at):
+        """Gate marshalling on every customs condition, all committed atomically.
+
+        The subject is only released for continued marshalling when:
+        no open (or timed) customs hold is active for the matched scope, the
+        dangerous-goods loads respect every segregation rule, and a valid,
+        unrevoked customs release event is in force. Failing any single gate
+        raises before the control plane commits, so state stays unchanged.
+        """
         def action():
+            # Open control: holds without an end stay active; scope must match.
             if active(holds, scope, check_at):
                 raise ValueError("customs hold active")
+            # Dangerous goods isolation.
             bad = violations(loads, rules)
             if bad:
                 raise ValueError("cargo segregation conflict")
-            return {"precleared": True}
-        return self.control.run(operation_id, "feature.customs.precleared", operation_id, at, action)
+            # Release event must authorize this subject for the scope at check_at.
+            clearance = released(release_events, subject, scope, check_at)
+            if clearance is None:
+                raise ValueError("customs release event missing")
+            return {"precleared": True, "release_event": clearance.event_id}
+        return self.control.run(operation_id, "feature.customs.precleared", subject, at, action)
 
     def recover_disruption(self, operation_id, options, capacity, capabilities, max_risk, max_duration,
                            requests, sections, existing, headway, at):

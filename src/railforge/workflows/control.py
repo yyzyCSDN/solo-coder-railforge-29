@@ -187,6 +187,3 @@ class RailForgeWorkflowControl:
     def fuse_eta(self, operation_id, rows, max_lateness, subject, at):
         return self._commit(operation_id, "eta.fused", subject, at,
                             lambda: fused_delay(rows, max_lateness))
-
-
-BROKEN_CONTROL_TOPICS.add('customs.hold.checked')
